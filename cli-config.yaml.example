@@ -2138,6 +2138,8 @@ auth:
   # Borrow and refresh the Codex CLI (~/.codex/auth.json) and Claude Code logins when Hermes has
   # no usable login of its own. Their refresh tokens are single-use, so two programs on one login
   # can log each other out; set false to make Hermes use only its own logins.
+  # Disable for separate employer/business profiles (root auth reads AND writes).
+  inherit_root_credentials: true
   adopt_external_logins: true
   # How `hermes auth add openai-codex` / `hermes model` sign in to OpenAI Codex.
   #   device_code (default) — open a URL and enter a code.

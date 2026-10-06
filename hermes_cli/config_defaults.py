@@ -1749,6 +1749,7 @@ DEFAULT_CONFIG = {
         # and rotate, so two programs on one login can log each other out; set false to make Hermes use only
         # its own logins (`hermes auth add <provider>`). `hermes auth add openai-codex` still offers the import
         # interactively.
+        "inherit_root_credentials": True,  # false: no root auth fallback or write-through
         "adopt_external_logins": True,
         # How `hermes auth add openai-codex` / `hermes model` sign in to OpenAI Codex.
         # "device_code" (default): open a URL, enter a code. "browser": authorization-code + PKCE on

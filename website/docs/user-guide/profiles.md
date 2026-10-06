@@ -4,6 +4,42 @@ sidebar_position: 2
 
 # Profiles: Running Multiple Agents
 
+## Separate employer or business credentials
+
+Named profiles inherit root Hermes credentials by default. To opt out in any
+profile, run `hermes -p business config set auth.inherit_root_credentials false`
+and use the following profile-local configuration:
+
+```yaml
+auth:
+  inherit_root_credentials: false
+  adopt_external_logins: false
+fallback_providers: []
+```
+
+`inherit_root_credentials: false` disables root singleton/pool reads, refresh
+write-through, and forked-grant recovery. Nous shared OAuth state stays under
+the active profile (ignoring `HERMES_SHARED_AUTH_DIR` in this mode). Missing,
+unusable or revoked local credentials do not authorize borrowing root credentials.
+The default `true` preserves existing shared-grant installations. Non-boolean
+values and unreadable/malformed configuration fail closed for inheritance; use
+literal YAML booleans, not quoted strings or environment substitutions. The
+policy is read from the active home without a process-global policy cache.
+
+These are three independent controls: root inheritance, external Codex/Claude CLI
+login adoption, and configured provider fallback. Select an explicit work provider
+and audit auxiliary routes, environment keys, custom endpoints, plugins, MCP and
+external tools separately. Explicit credential imports remain possible. Do not
+copy a rotating OAuth grant between independently refreshing clients.
+
+This is not a filesystem sandbox or an automatic context scrubber. Create a fresh
+profile without `--clone` or `--clone-all`: even `--clone` copies curated memory,
+SOUL, skills and `.env`. Profile memory/session paths are separate, but copied
+state, shared work directories, project instructions, external memory backends and
+explicit tool access can still cross boundaries. This setting never copies or
+removes memories. Start fresh processes after changing policy; already running
+clients can hold previously resolved credentials.
+
 Run multiple independent Hermes agents on the same machine — each with its own config, API keys, memory, sessions, skills, and gateway state.
 
 ## What are profiles?

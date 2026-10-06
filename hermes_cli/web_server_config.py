@@ -107,6 +107,11 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "description": "Refuse Docker sandboxes when egress is enabled but not configured/running",
         "category": "security",
     },
+    "auth.inherit_root_credentials": {
+        "type": "boolean",
+        "description": "Inherit root Hermes credentials in named profiles. Off blocks root reads and refresh write-through.",
+        "category": "security",
+    },
     "auth.adopt_external_logins": {
         "type": "boolean",
         "description": (
