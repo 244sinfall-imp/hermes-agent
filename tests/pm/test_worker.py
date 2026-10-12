@@ -60,6 +60,9 @@ def _current_environment(tmp_path, monkeypatch, members):
     repo = tmp_path / "project"
     repo.mkdir()
     (repo / "uv.lock").write_text("version = 1\n")
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname="currency-fixture"\nversion="1"\n'
+        '[project.optional-dependencies]\nincumbent-extra=[]\nprovider-extra=[]\n')
     monkeypatch.setattr(paths, "repo_root", lambda: repo)
     environment = install_state_dir(repo) / "environments" / "existing" / "venv"
     environment.mkdir(parents=True)
@@ -144,6 +147,14 @@ def test_currency_probe_preserves_union_and_candidate_inputs(client, tmp_path, m
     assert not client.venv_is_current(plugins=Members(members), **root_args)
     assert snapshot() == changed
     marker.write_bytes(contents)
+    assert client.venv_is_current(plugins=Members(members), **root_args)
+
+    source_file = repo / "auth_policy.py"
+    source_file.write_text("inherit_root = False\n")
+    changed = snapshot()
+    assert not client.venv_is_current(plugins=Members(members), **root_args)
+    assert snapshot() == changed
+    source_file.unlink()
     assert client.venv_is_current(plugins=Members(members), **root_args)
 
     manifest.write_text('name: candidate\npython_dependencies: ["candidate-dep==2"]\n')
