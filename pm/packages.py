@@ -504,8 +504,9 @@ class Venv(StatePackage):
         h.update(json.dumps(python).encode())
         # Plugin members union into the venv — a changed member set must
         # re-sync even when extras and core lock are unchanged.
-        from pm.workspace import build_member_dirs, members_stamp
+        from pm.workspace import build_member_dirs, core_sources_stamp, members_stamp
 
+        h.update(core_sources_stamp(self.project_root()).encode())
         h.update(members_stamp(build_member_dirs(extras) if plugin_dirs is None else plugin_dirs).encode())
         return h.hexdigest()
 
