@@ -62,8 +62,8 @@ def members_stamp(plugin_dirs) -> str:
     return h.hexdigest()
 
 
-def _copy_core_inputs(source: Path, destination: Path) -> None:
-    """Build from a writable snapshot, never from signed/read-only source."""
+def _core_inputs(source: Path, destination: Path | None = None):
+    """One selection policy for source currency and the writable snapshot."""
     import fnmatch
     import tomllib
 
@@ -92,19 +92,51 @@ def _copy_core_inputs(source: Path, destination: Path) -> None:
         return [name for name in names if name in nested_excluded or name.startswith(".")
                 or name.endswith(".egg-info") or (Path(directory) / name).is_symlink()]
 
+    directories = []
     for entry in source.iterdir():
         if (entry.is_dir() and not entry.is_symlink() and entry.name not in excluded
-                and not entry.name.startswith(".") and entry.resolve() != destination.resolve()
+                and not entry.name.startswith(".")
+                and (destination is None or entry.resolve() != destination.resolve())
                 and any(fnmatch.fnmatchcase(entry.name, pattern) for pattern in package_roots)):
-            target = destination / entry.name
-            shutil.copytree(entry, target, ignore=ignore)
+            directories.append(entry)
+    selected_files = []
     for name in files:
         entry = source / name
         if not entry.is_file() or entry.is_symlink():
             continue
         if not entry.resolve().is_relative_to(source.resolve()):
             raise InstallError("venv", f"build input escapes the core project: {name}")
-        target = destination / name
+        selected_files.append(entry)
+    return directories, selected_files, ignore
+
+
+def core_sources_stamp(source: Path) -> str:
+    """Hash names and bytes actually included by the core snapshot copier."""
+    directories, files, ignore = _core_inputs(source)
+    selected = set(files)
+    for entry in directories:
+        for directory, dirs, names in os.walk(entry):
+            dirs[:] = sorted(set(dirs) - set(ignore(directory, dirs)))
+            selected.update(Path(directory) / name for name in set(names) - set(ignore(directory, names)))
+    digest = hashlib.sha256()
+    for entry in sorted(selected, key=lambda path: path.relative_to(source).as_posix()):
+        name = entry.relative_to(source).as_posix().encode("utf-8")
+        content = entry.read_bytes()
+        # Length framing avoids ambiguous filename/content boundaries.
+        digest.update(len(name).to_bytes(8, "big"))
+        digest.update(name)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def _copy_core_inputs(source: Path, destination: Path) -> None:
+    """Build from a writable snapshot, never from signed/read-only source."""
+    directories, files, ignore = _core_inputs(source, destination)
+    for entry in directories:
+        shutil.copytree(entry, destination / entry.name, ignore=ignore)
+    for entry in files:
+        target = destination / entry.relative_to(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(entry, target)
 
