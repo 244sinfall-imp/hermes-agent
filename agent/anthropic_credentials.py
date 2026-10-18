@@ -547,11 +547,13 @@ def _write_claude_code_credentials(
     except (OSError, ValueError) as e:
         logger.error("Failed to write refreshed credentials to %s: %s", cred_path, e)
         raise CredentialPersistError(cred_path, e) from e
-    oauth_data: dict[str, Any] = {"accessToken": access_token, "refreshToken": refresh_token, "expiresAt": expires_at_ms}
+    # Native plan/rate-limit metadata belongs to this same CLI record. Rotate
+    # managed fields without erasing it or guessing an entitlement from tokens.
+    previous = existing.get("claudeAiOauth")
+    oauth_data: dict[str, Any] = dict(previous) if isinstance(previous, dict) else {}
+    oauth_data.update({"accessToken": access_token, "refreshToken": refresh_token, "expiresAt": expires_at_ms})
     if scopes is not None:
         oauth_data["scopes"] = scopes
-    elif "claudeAiOauth" in existing and "scopes" in existing["claudeAiOauth"]:
-        oauth_data["scopes"] = existing["claudeAiOauth"]["scopes"]
     existing["claudeAiOauth"] = oauth_data
     _commit_private_json(cred_path, existing, "credentials")
     _mirror_claude_code_credentials_to_keychain(
