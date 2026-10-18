@@ -506,6 +506,9 @@ def _global_auth_file_path() -> Optional[Path]:
     """Global-root auth.json in profile mode; None when profile and global root are the same dir.
 
     Read-only fallback path, so no pytest seat belt here (it lives on ``_auth_file_path()``)."""
+    from hermes_cli.auth_policy import inherit_root_credentials_enabled
+    if not inherit_root_credentials_enabled():
+        return None
     try:
         from hermes_constants import get_default_hermes_root
         global_root = get_default_hermes_root()
@@ -725,6 +728,8 @@ def _auth_store_lock(
     reentrancy tracker and kernel lock. Lock ordering invariant: ``_auth_store_lock`` FIRST (outer),
     ``_nous_shared_store_lock`` SECOND (inner), else deadlock against a concurrent shared import."""
     auth_path = target_path if target_path is not None else _auth_file_path()
+    from hermes_cli.auth_policy import guard_root_credential_path
+    guard_root_credential_path(auth_path)
     lock_path = auth_path.with_suffix(".lock")
     with _file_lock(
         lock_path, _auth_lock_holder_for(auth_path), timeout_seconds,
@@ -738,6 +743,8 @@ def _empty_auth_store() -> dict[str, Any]:
 
 def _load_auth_store(auth_file: Optional[Path] = None) -> dict[str, Any]:
     auth_file = auth_file or _auth_file_path()
+    from hermes_cli.auth_policy import guard_root_credential_path
+    guard_root_credential_path(auth_file)
     if not auth_file.exists():
         return _empty_auth_store()
     try:
@@ -797,6 +804,8 @@ def _save_auth_store(auth_store: dict[str, Any], target_path: Optional[Path] = N
     """Atomically persist *auth_store* (0o600, parent tightened to 0o700) to the active store, or to
     an explicit *target_path* (e.g. the global-root write-through for rotating xAI OAuth grants)."""
     auth_file = target_path if target_path is not None else _auth_file_path()
+    from hermes_cli.auth_policy import guard_root_credential_path
+    guard_root_credential_path(auth_file)
     auth_store["version"] = AUTH_STORE_VERSION
     auth_store["updated_at"] = datetime.now(UTC).isoformat()
     _save_private_json(auth_file, auth_store, fsync_dir=True)

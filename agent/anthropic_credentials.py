@@ -739,6 +739,9 @@ def _get_hermes_oauth_file() -> Path:
 def _root_hermes_oauth_file() -> Optional[Path]:
     """Global-root ``.anthropic_oauth.json`` inside a named profile (None in classic mode); used to commit a
     rotation of a grant the profile borrowed via the pool's root fallback."""
+    from hermes_cli.auth_policy import inherit_root_credentials_enabled
+    if not inherit_root_credentials_enabled():
+        return None
     try:
         from hermes_constants import get_default_hermes_root
         root = get_default_hermes_root()
@@ -811,6 +814,8 @@ def run_hermes_oauth_login_pure() -> Optional[dict[str, Any]]:
 
 def read_hermes_oauth_credentials() -> Optional[dict[str, Any]]:
     """Read Hermes-managed OAuth credentials from ~/.hermes/.anthropic_oauth.json."""
+    from hermes_cli.auth_policy import guard_root_credential_path
+    guard_root_credential_path(_get_hermes_oauth_file())
     data = _load_json_if_exists(_get_hermes_oauth_file(), "Hermes OAuth credentials")
     return data if data is not None and data.get("accessToken") else None
 
@@ -822,6 +827,8 @@ def _write_hermes_oauth_credentials(
     ``target`` lets a named profile commit a grant it BORROWED from the global root back to the ROOT singleton
     instead of forking a copy under its own HERMES_HOME; without this write-through the next ``load_pool()``
     re-seeds the stale (consumed) pair from the file over the rotated pool entry."""
+    from hermes_cli.auth_policy import guard_root_credential_path
+    guard_root_credential_path(target if target is not None else _get_hermes_oauth_file())
     _commit_private_json(
         target if target is not None else _get_hermes_oauth_file(),
         {"accessToken": access_token, "refreshToken": refresh_token, "expiresAt": expires_at_ms},

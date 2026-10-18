@@ -124,6 +124,8 @@ def test_opt_out_never_adopts_codex_cli_login(tmp_path, monkeypatch):
     def _rejected(*_a, **_k):
         raise AuthError("bad", provider="openai-codex", code="invalid_grant", relogin_required=True)
 
+    # The refresh transaction imports this callable through the auth facade.
+    monkeypatch.setattr(auth, "refresh_codex_oauth_pure", _rejected)
     monkeypatch.setattr(auth_codex, "refresh_codex_oauth_pure", _rejected)
     with pytest.raises(AuthError) as info:
         _refresh_codex_auth_tokens(dict(STALE), 5.0)

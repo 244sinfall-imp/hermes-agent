@@ -353,6 +353,11 @@ def _nous_shared_auth_dir() -> Path:
     oauth`` one-tap imports it). Written on login AND every runtime refresh so the refresh_token
     stays current across profiles; a stale token just falls back to device-code.
     """
+    from hermes_cli.auth_policy import inherit_root_credentials_enabled
+    from hermes_constants import get_hermes_home, get_default_hermes_root
+    if (get_hermes_home().resolve() != get_default_hermes_root().resolve()
+            and not inherit_root_credentials_enabled()):
+        return get_hermes_home() / "shared"
     override = os.getenv("HERMES_SHARED_AUTH_DIR", "").strip()
     if override:
         return Path(override).expanduser()

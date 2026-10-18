@@ -1185,6 +1185,12 @@ def validate_config_structure(config: Optional[dict[str, Any]] = None) -> list[C
             return [config_load_issue(exc)]
 
     issues: list[ConfigIssue] = []
+    auth = config.get("auth", {})
+    if not isinstance(auth, dict) or (
+        "inherit_root_credentials" in auth and type(auth["inherit_root_credentials"]) is not bool
+    ):
+        _issue(issues, "error", "auth.inherit_root_credentials must be a boolean",
+               "Use auth: {inherit_root_credentials: false} to disable root credential inheritance")
     _validate_voice(config, issues)
     _validate_timezone(config, issues)
     cp = config.get("custom_providers")
