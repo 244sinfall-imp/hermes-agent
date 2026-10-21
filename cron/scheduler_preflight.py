@@ -251,6 +251,17 @@ def _preflight_check_delivery(job: dict) -> Optional[str]:
             part = part.strip()
             if not part or part.lower() in {"local", "origin", "all"}:
                 continue
+            if part == "raze":
+                if lane_value != "raze":
+                    return "Raze must be the sole literal delivery target"
+                try:
+                    from raze_cron_delivery import preflight
+                    error = preflight()
+                except Exception:
+                    error = "Raze cron delivery integration unavailable"
+                if error:
+                    return error
+                continue
             # bot-chat targets deliver via a local subprocess; failures land in last_delivery_error.
             if _delivery.parse_bot_chat_deliver_token(part) is not None:
                 continue

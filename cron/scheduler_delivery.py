@@ -1979,6 +1979,25 @@ def _deliver_result(
     ``failure_deliver`` override when present (NS-788). Returns None on success, else an error."""
     job.pop("_bot_chat_delivery_receipts", None)
     job.pop("_notification_all_targets_suppressed", None)
+    # Raze #40: explicit per-job local queue, never an origin/all fallback.
+    # Intercept before the generic worker/gateway lane: the ledger execution_id
+    # survives recovery, whereas the plugin CronExecution context may not.
+    if _delivery_lane_value(job, for_failure=for_failure) == "raze":
+        try:
+            from raze_cron_delivery import enqueue_result
+            reminder_id = enqueue_result(job, content, for_failure=for_failure)
+        except Exception:
+            # No content, local paths or exception payloads in outward errors.
+            return "Raze cron result not queued (disabled, unbound or unsafe store)"
+        values = {"last_delivery_unverified": None, "last_delivery_queued": {
+            "raze": {"status": "queued", "reminder_id": reminder_id}}}
+        job.update(values)
+        try:
+            from cron.jobs import update_job
+            update_job(job["id"], values)
+        except Exception:
+            logger.warning("Raze cron queue receipt bookkeeping unavailable")
+        return None
     targets = _resolve_delivery_targets(job, for_failure=for_failure)
     if not targets:
         _record_delivery_verification(job, [])
