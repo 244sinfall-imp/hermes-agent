@@ -370,13 +370,16 @@ def _tool_search_scoped_names(agent) -> frozenset:
     except Exception:
         return frozenset()
     try:
-        return _ts.scoped_deferrable_names(model_tools.get_tool_definitions(
+        names = frozenset(_ts.scoped_deferrable_names(model_tools.get_tool_definitions(
             enabled_toolsets=getattr(agent, "enabled_toolsets", None),
             disabled_toolsets=getattr(agent, "disabled_toolsets", None),
             quiet_mode=True, skip_tool_search_assembly=True,
-        ) or [])
+        ) or []))
     except Exception:
-        return frozenset()
+        names = frozenset()
+    # Per-tool policy narrows what tool_call may unwrap (not cached: see docstring).
+    from agent.tool_policy import agent_policy
+    return frozenset(agent_policy(agent).filter_names(names))
 
 
 def _canonical_tool_name(function_name: str) -> str:
@@ -699,6 +702,12 @@ def _dispatch_authorized_once(
             callback()
 
     block_message, block_error_type = scope_block, "tool_scope_block"
+    # Per-tool policy: checked on the UNDERLYING name (bridge already unwrapped) for every executor
+    # kind — inline, delegate, memory provider, context engine and registry alike.
+    from agent.tool_policy import TOOL_POLICY_ERROR_TYPE, agent_policy, current_policy, denied_message
+    policy = agent_policy(agent).intersect(current_policy())
+    if block_message is None and not policy.permits(ref.name):
+        block_message, block_error_type = denied_message(ref.name), TOOL_POLICY_ERROR_TYPE
     if block_message is None:
         block_error_type = "plugin_block"
         resolve = lambda: _pre_tool_block(agent, ref)
@@ -709,6 +718,10 @@ def _dispatch_authorized_once(
     # Checked once, after plugin modify hooks (which may replace arguments) and
     # before guardrails or real dispatch: a copied compression marker in an
     # effect-capable argument must never reach the tool.
+    if block_body is None and not policy.permits(ref.name):
+        # A plugin modify hook cannot rename the call, but re-check after it anyway (cheap).
+        block_body, block_error_type = {"error": denied_message(ref.name)}, TOOL_POLICY_ERROR_TYPE
+
     if block_body is None:
         pruned_paths = _context_pruned_argument_paths(ref.name, ref.args)
         if pruned_paths:
@@ -743,9 +756,17 @@ def _dispatch_authorized_once(
     _advance_start_order(lambda: _begin_tool_execution(agent, ref, display_index))
     from agent.tool_progress_relay import bound_tool_progress
     from tools.connectors.data_use import collect_data_use
+
+    def _execute_under_policy():
+        # Bound for the real execution so nested dispatch (execute_code RPC, connector batches,
+        # plugin dispatch_tool, tool_call re-dispatch) and agents built inside the call
+        # (delegation children) inherit the narrowing via the copied context.
+        with policy.bound():
+            return execute(ref.args)
+
     with bound_tool_progress(agent.tool_progress_callback, ref.name, ref.call_id), collect_data_use() as data_use:
         try:
-            return _run_with_activity_heartbeat(agent, ref.name, lambda: execute(ref.args))
+            return _run_with_activity_heartbeat(agent, ref.name, _execute_under_policy)
         finally:
             state.data_use = frozenset(data_use)
 
