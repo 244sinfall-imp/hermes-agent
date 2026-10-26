@@ -1704,6 +1704,23 @@ def _normalize_enabled_toolsets(value: Any) -> Optional[list[str]]:
     return [str(j).strip() for j in value if str(j).strip()]
 
 
+def _normalize_tool_name_list(field: str) -> Callable[[Any], Optional[list[str]]]:
+    """Per-job per-tool allow/deny list. Same contract as enabled_toolsets: None = unset,
+    an explicit [] persists as [] (for enabled_tools it means 'no tools at all'); a non-list raises
+    before anything is stored."""
+    def _norm(value: Any) -> Optional[list[str]]:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError(f"{field} must be a list of tool names (or [] for none).")
+        return sorted({str(j).strip() for j in value if str(j).strip()})
+    return _norm
+
+
+_normalize_enabled_tools = _normalize_tool_name_list("enabled_tools")
+_normalize_disabled_tools = _normalize_tool_name_list("disabled_tools")
+
+
 def _normalize_context_from(value: Any) -> Optional[list[str]]:
     """Accept a job id or a list of ids; anything else is None."""
     if isinstance(value, str):
@@ -1751,6 +1768,8 @@ _CREATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
     "monitor_script": _normalize_job_optional_text,
     "monitor_url": _normalize_job_optional_text,
     "enabled_toolsets": _normalize_enabled_toolsets,
+    "enabled_tools": _normalize_enabled_tools,
+    "disabled_tools": _normalize_disabled_tools,
     "workdir": _normalize_workdir,
     "no_agent": bool,
     "context_from": _normalize_context_from,
@@ -1760,6 +1779,8 @@ _CREATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
 _UPDATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
     # [] is an explicit zero-tool allowlist and must survive the update path as [] too (#82010).
     "enabled_toolsets": _normalize_enabled_toolsets,
+    "enabled_tools": _normalize_enabled_tools,
+    "disabled_tools": _normalize_disabled_tools,
     "workdir": lambda v: None if v in {None, "", False} else _normalize_workdir(v),
     "monitor_script": _normalize_job_optional_text,
     "monitor_url": _normalize_job_optional_text,
@@ -1825,6 +1846,8 @@ def create_job(
     script: Optional[str] = None,
     context_from: Optional[str | list[str]] = None,
     enabled_toolsets: Optional[list[str]] = None,
+    enabled_tools: Optional[list[str]] = None,
+    disabled_tools: Optional[list[str]] = None,
     workdir: Optional[str] = None,
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
@@ -1934,6 +1957,8 @@ def create_job(
     for key, value in (
         ("attach_to_session", normalized_attach), ("reasoning_effort", normalized_reasoning_effort),
         ("failure_deliver", f["failure_deliver"]), ("interpreter", f["interpreter"]),
+        # Per-tool policy: [] is meaningful for enabled_tools (zero tools), so test `is not None`.
+        ("enabled_tools", f["enabled_tools"]), ("disabled_tools", f["disabled_tools"] or None),
     ):
         if value is not None:
             job[key] = value

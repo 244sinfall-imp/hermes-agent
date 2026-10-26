@@ -949,6 +949,10 @@ def _inherit_parent_tool_surface(review_agent: Any, agent: Any) -> None:
     # getattr: /btw and review callers build bare object.__new__ agents in tests without ``tools``.
     review_agent.tools = copy.deepcopy(getattr(agent, "tools", None) or [])
     review_agent.valid_tool_names = {tool["function"]["name"] for tool in review_agent.tools}
+    # The fork is built after the turn, outside any bound policy: carry the parent's per-tool
+    # policy explicitly so a restricted session's review//btw fork is never wider.
+    from agent.tool_policy import agent_policy
+    review_agent._tool_policy = agent_policy(review_agent).intersect(agent_policy(agent))
     review_agent._tool_snapshot_generation = _FROZEN_TOOL_SNAPSHOT_GENERATION
 
 

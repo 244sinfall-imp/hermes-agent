@@ -894,6 +894,11 @@ class ToolRegistry:
         self, name: str, args: dict, *, scope: Optional[str] = None, **kwargs) -> str | dict:
         """Execute a tool handler by name: async handlers bridged via ``_run_async()``,
         results normalized, every exception returned as ``{"error": ...}``."""
+        # Defense in depth for direct callers (plugin ``dispatch_tool``) that bypass
+        # handle_function_call: the turn's per-tool policy still applies.
+        from agent.tool_policy import current_policy, denied_result
+        if not current_policy().permits(name):
+            return denied_result(name)
         entry = self.get_entry(name, scope=scope)
         if not entry:
             return tool_error(f"Unknown tool: {name}")

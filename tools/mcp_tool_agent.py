@@ -56,10 +56,16 @@ def _tool_defs_content_changed(agent, new_defs: list) -> bool:
 
 def _drop_session_tools(agent, new_defs: list, new_names: set) -> tuple:
     from toolsets import agent_tool_drops
+    from agent.tool_policy import agent_policy
     drops = agent_tool_drops(agent)
-    if not drops:
-        return new_defs, new_names
-    return [entry for entry in new_defs if _def_name(entry) not in drops], new_names - drops
+    if drops:
+        new_defs, new_names = [entry for entry in new_defs if _def_name(entry) not in drops], new_names - drops
+    # Per-tool policy survives MCP reloads, late binding and prefix restore (all publish here).
+    policy = agent_policy(agent)
+    if policy.restrictive:
+        new_defs = policy.filter_defs(new_defs)
+        new_names = policy.filter_names(new_names)
+    return new_defs, new_names
 
 
 def _publish_tool_snapshot(

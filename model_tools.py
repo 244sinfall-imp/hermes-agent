@@ -721,6 +721,9 @@ def _dispatch_bridge_tool(function_name: str, function_args: dict[str, Any],
                                             quiet_mode=True, skip_tool_search_assembly=True) or []
     except Exception:
         current_defs = []
+    # tool_search / tool_describe must not reveal what the per-tool policy forbids.
+    from agent.tool_policy import current_policy
+    current_defs = current_policy().filter_defs(current_defs)
     args = function_args or {}
     if function_name == ts.TOOL_SEARCH_NAME:
         return ts.dispatch_tool_search(args, current_tool_defs=current_defs), None
@@ -898,6 +901,14 @@ def handle_function_call(
         _emit_post_tool_call_hook(function_name=function_name, function_args=function_args, result=result,
                                   **asdict(ids), middleware_trace=list(trace), **extra)
         return result
+
+    # Per-tool policy bound by the owning turn (ContextVar): covers nested callers that never pass
+    # through the agent loop — execute_code RPC, connector batches, tool_call re-dispatch.
+    from agent.tool_policy import TOOL_POLICY_ERROR_TYPE, current_policy, denied_message, denied_result
+    _policy = current_policy()
+    if not _policy.permits(function_name):
+        return _emit(denied_result(function_name), status="blocked", error_type=TOOL_POLICY_ERROR_TYPE,
+                     error_message=denied_message(function_name))
 
     # Tool Search bridge: tool_search / tool_describe are catalog reads handled
     # inline; tool_call is unwrapped so every downstream hook (pre/post, edit

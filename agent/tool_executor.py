@@ -380,6 +380,8 @@ def _tool_search_scoped_names(agent) -> frozenset:
         ) or [])
     except Exception:
         names = frozenset()
+    from agent.tool_policy import agent_policy
+    names = frozenset(agent_policy(agent).filter_names(names))
     with contextlib.suppress(Exception):
         agent._tool_search_scope_cache = (cache_key, names)
     return names
@@ -707,6 +709,12 @@ def _dispatch_authorized_once(
             callback()
 
     block_message, block_error_type = scope_block, "tool_scope_block"
+    # Per-tool policy: checked on the UNDERLYING name (bridge already unwrapped) for every executor
+    # kind — inline, delegate, memory provider, context engine and registry alike.
+    from agent.tool_policy import TOOL_POLICY_ERROR_TYPE, agent_policy, current_policy, denied_message
+    policy = agent_policy(agent).intersect(current_policy())
+    if block_message is None and not policy.permits(ref.name):
+        block_message, block_error_type = denied_message(ref.name), TOOL_POLICY_ERROR_TYPE
     if block_message is None:
         block_error_type = "plugin_block"
         resolve = lambda: _pre_tool_block(agent, ref)
@@ -717,6 +725,10 @@ def _dispatch_authorized_once(
     # Checked once, after plugin modify hooks (which may replace arguments) and
     # before guardrails or real dispatch: a copied compression marker in an
     # effect-capable argument must never reach the tool.
+    if block_body is None and not policy.permits(ref.name):
+        # A plugin modify hook cannot rename the call, but re-check after it anyway (cheap).
+        block_body, block_error_type = {"error": denied_message(ref.name)}, TOOL_POLICY_ERROR_TYPE
+
     if block_body is None:
         pruned_paths = _context_pruned_argument_paths(ref.name, ref.args)
         if pruned_paths:
@@ -749,7 +761,15 @@ def _dispatch_authorized_once(
     from agent.terminal_approval_batch import prepare_current_terminal
     prepare_current_terminal(ref)
     _advance_start_order(lambda: _begin_tool_execution(agent, ref, display_index))
-    return _run_with_activity_heartbeat(agent, ref.name, lambda: execute(ref.args))
+
+    def _execute_under_policy():
+        # Bound for the real execution so nested dispatch (execute_code RPC, connector batches,
+        # plugin dispatch_tool, tool_call re-dispatch) and agents built inside the call
+        # (delegation children) inherit the narrowing via the copied context.
+        with policy.bound():
+            return execute(ref.args)
+
+    return _run_with_activity_heartbeat(agent, ref.name, _execute_under_policy)
 
 
 def _run_agent_tool_execution_middleware(

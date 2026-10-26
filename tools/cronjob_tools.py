@@ -690,6 +690,8 @@ def _action_create(a: dict[str, Any]) -> str:
             script=_normalize_optional_job_value(script), context_from=context_from,
             # [] is an explicit zero-tool allowlist, not a clear back to the unrestricted default (#82010).
             enabled_toolsets=a["enabled_toolsets"] if a["enabled_toolsets"] is not None else None,
+            # Per-tool narrowing; [] for enabled_tools is an explicit zero-tool allowlist.
+            enabled_tools=a["enabled_tools"], disabled_tools=a["disabled_tools"],
             workdir=_normalize_optional_job_value(a["workdir"]),
             no_agent=_no_agent, attach_to_session=a["attach_to_session"],
             monitor_script=_normalize_optional_job_value(a["monitor_script"]),
@@ -906,6 +908,9 @@ def _update_run_fields(job: dict[str, Any], a: dict[str, Any], updates: dict[str
     if a["enabled_toolsets"] is not None:
         # [] is an explicit zero-tool allowlist, not a clear back to the unrestricted default (#82010).
         updates["enabled_toolsets"] = a["enabled_toolsets"]
+    for key in ("enabled_tools", "disabled_tools"):
+        if a[key] is not None:
+            updates[key] = a[key]
     if a["attach_to_session"] is not None:
         updates["attach_to_session"] = bool(a["attach_to_session"])
     if a["workdir"] is not None:
@@ -1002,6 +1007,8 @@ def cronjob(
     context_from: Optional[str | list[str]] = None,
     continuity: Optional[bool] = None,
     enabled_toolsets: Optional[list[str]] = None,
+    enabled_tools: Optional[list[str]] = None,
+    disabled_tools: Optional[list[str]] = None,
     workdir: Optional[str] = None,
     no_agent: Optional[bool] = None,
     attach_to_session: Optional[bool] = None,
@@ -1134,6 +1141,16 @@ Jobs run in a fresh session with no current-chat context, so prompts must be sel
                 "items": {"type": "string"},
                 "description": "Optional toolset names to restrict the job's agent to (e.g. [\"web\", \"terminal\"]) — cuts token overhead. Infer from the prompt. Omit for all default tools. [] = an explicit zero-tool allowlist (the job's agent gets no toolsets, MCP servers included unless named); it is preserved as [], never widened back to the default."
             },
+            "enabled_tools": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional per-TOOL allowlist applied on top of enabled_toolsets (exact names or globs like \"mcp_slack_*_read*\"). Only these tools may run, enforced at execution. [] = no tools at all. Use for unattended jobs that read untrusted input."
+            },
+            "disabled_tools": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional per-TOOL denylist (exact names or globs), e.g. [\"mcp_newo_slack_slack_send_message\"]. Always wins over allow lists. On update, [] clears it."
+            },
             "workdir": {
                 "type": "string",
                 "description": "Optional absolute existing path to run the job from: injects that directory's AGENTS.md/context files and anchors terminal/file tools there. On update, '' clears."
@@ -1169,7 +1186,7 @@ def check_cronjob_requirements() -> bool:
 # different model. Programmatic callers of cronjob() itself retain the parameters.
 _HANDLER_FORWARDED_ARGS = (
     "job_id", "prompt", "schedule", "name", "repeat", "deliver", "failure_deliver", "skill", "skills", "reason",
-    "script", "context_from", "continuity", "enabled_toolsets", "workdir", "no_agent", "attach_to_session",
+    "script", "context_from", "continuity", "enabled_toolsets", "enabled_tools", "disabled_tools", "workdir", "no_agent", "attach_to_session",
     "paused_reason", "pinned")
 
 

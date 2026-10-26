@@ -588,8 +588,13 @@ def _finish_remote_kernel_result(kernel_result: dict[str, Any], *,
 
 
 def _sandbox_tools_for(enabled_tools: Optional[list[str]]) -> frozenset:
-    """Enabled ∩ SANDBOX_ALLOWED_TOOLS, or every sandbox tool when the intersection is empty."""
-    return frozenset(SANDBOX_ALLOWED_TOOLS & set(enabled_tools or ())) or SANDBOX_ALLOWED_TOOLS
+    """Enabled ∩ SANDBOX_ALLOWED_TOOLS, or every sandbox tool when the intersection is empty —
+    then narrowed by the turn's per-tool policy. The policy filter runs AFTER the fallback, so a
+    policy that forbids every sandbox tool yields an empty set instead of widening to all."""
+    tools = frozenset(SANDBOX_ALLOWED_TOOLS & set(enabled_tools or ())) or SANDBOX_ALLOWED_TOOLS
+    from agent.tool_policy import current_policy
+    policy = current_policy()
+    return frozenset(policy.filter_names(tools)) if policy.restrictive else tools
 
 
 def _run_remote_per_call(env, env_type: str, code: str, effective_task_id: str,

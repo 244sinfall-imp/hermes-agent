@@ -1090,6 +1090,31 @@ def _client_kwargs_from_routed(client, timeout) -> dict[str, Any]:
     return kwargs
 
 
+def _apply_tool_policy_to_schemas(agent) -> None:
+    """Drop schemas the per-tool policy forbids and keep valid_tool_names in step. Advertising
+    is not permission — execution re-checks — but a hidden tool should not tempt the model."""
+    from agent.tool_policy import agent_policy
+    policy = agent_policy(agent)
+    if not policy.restrictive or agent.tools is None:
+        return
+    agent.tools = policy.filter_defs(agent.tools)
+    if getattr(agent, "valid_tool_names", None) is not None:
+        agent.valid_tool_names = {t["function"]["name"] for t in agent.tools}
+
+
+def _refuse_tool_policy_on_codex_app_server(agent) -> None:
+    """Fail closed: in codex_app_server mode Codex owns the loop and its built-in tools, and Hermes
+    tools run in a separate MCP process — neither passes through Hermes dispatch, so a per-tool
+    policy could not be enforced. Refuse instead of silently running unrestricted."""
+    from agent.tool_policy import agent_policy
+    if agent_policy(agent).restrictive and getattr(agent, "api_mode", None) == "codex_app_server":
+        raise RuntimeError(
+            "BLOCKED_MISSING_PREREQUISITE: enabled_tools/disabled_tools cannot be enforced in the "
+            "codex_app_server API mode (Codex executes its own tools outside Hermes dispatch). "
+            "Use another API mode for this session or job, or drop the per-tool policy."
+        )
+
+
 def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     # A feature that left core for a catalog plugin (Home Assistant) is installed for a home that
     # used it, once per process, before discovery so its tools are in this agent's snapshot.
@@ -1120,6 +1145,7 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     agent.tools = prune_oneshot_tools(agent.tools or [])
     if drops := agent_tool_drops(agent):
         agent.tools = [t for t in agent.tools if t["function"]["name"] not in drops]
+    _apply_tool_policy_to_schemas(agent)
 
     agent.valid_tool_names = {tool["function"]["name"] for tool in agent.tools} if agent.tools else set()
     # Kanban guidance is session-static for the dispatcher-owned worker only. Profiles may
@@ -2363,6 +2389,7 @@ def init_agent(
     acp_command: str | None = None, acp_args: list[str] | None = None, command: str | None = None,
     args: list[str] | None = None, model: str = "", max_iterations: int = sys.maxsize,
     enabled_toolsets: list[str] | None = None, disabled_toolsets: list[str] | None = None,
+    enabled_tools: list[str] | None = None, disabled_tools: list[str] | None = None,
     save_trajectories: bool = False, verbose_logging: bool = False, quiet_mode: bool = False,
     tool_progress_mode: str = "all", ephemeral_system_prompt: str | None = None,
     log_prefix_chars: int = 100, log_prefix: str = "", providers_allowed: list[str] | None = None,
@@ -2404,6 +2431,11 @@ def init_agent(
     for _name in _GATEWAY_IDENTITY_PARAMS:
         setattr(agent, f"_{_name}", _params[_name])
     agent.session_cwd = cwd or None
+    # Per-tool policy narrows the toolset selection. Intersected with any policy bound in the
+    # constructing context, so an agent built inside a restricted turn (delegation child, /btw,
+    # review fork) can never be wider than its parent.
+    from agent.tool_policy import ToolPolicy, current_policy
+    agent._tool_policy = ToolPolicy.from_lists(enabled_tools, disabled_tools).intersect(current_policy())
     # Shared iteration budget: parent creates, children inherit.
     agent.iteration_budget = iteration_budget or IterationBudget(max_iterations)
     # CLI replaces this with _cprint so raw ANSI status lines go through prompt_toolkit's
@@ -2490,6 +2522,9 @@ def init_agent(
     _init_usage_state(agent)
     _clamp_compressor_to_ollama_num_ctx(agent)
     _emit_compression_summary(agent, cs)
+    # Memory-provider and context-engine schemas are appended after _load_tools.
+    _apply_tool_policy_to_schemas(agent)
+    _refuse_tool_policy_on_codex_app_server(agent)
     _snapshot_primary_runtime(agent)
 
 
