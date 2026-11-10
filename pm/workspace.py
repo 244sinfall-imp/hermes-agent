@@ -139,11 +139,16 @@ def _core_inputs(source: Path, destination: Path | None = None):
     return directories, selected_files, ignore
 
 
+_CURRENCY_EXCLUDED_ROOTS = frozenset({"plugins"})
+
+
 def core_sources_stamp(source: Path) -> str:
     """Hash names and bytes actually included by the core snapshot copier."""
     directories, files, ignore = _core_inputs(source)
     selected = set(files)
-    for entry in directories:
+    # Bundled plugins are a dependency question for members_stamp, not core currency: adding or
+    # enabling a dependency-free plugin must not rebuild the environment.
+    for entry in [d for d in directories if d.name not in _CURRENCY_EXCLUDED_ROOTS]:
         for directory, dirs, names in os.walk(entry):
             dirs[:] = sorted(set(dirs) - set(ignore(directory, dirs)))
             selected.update(Path(directory) / name for name in set(names) - set(ignore(directory, names)))

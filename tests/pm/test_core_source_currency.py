@@ -11,7 +11,7 @@ from pm.workspace import _copy_core_inputs
 def core(tmp_path):
     root = tmp_path / "core"
     root.mkdir()
-    (root / "pyproject.toml").write_text('[project]\nname="core"\nversion="1"\n[tool.setuptools.packages.find]\ninclude=["hermes_cli*"]\n')
+    (root / "pyproject.toml").write_text('[project]\nname="core"\nversion="1"\n[tool.setuptools.packages.find]\ninclude=["hermes_cli*", "plugins*"]\n')
     (root / "uv.lock").write_text("version = 1\n")
     (root / "hermes_cli").mkdir()
     (root / "hermes_cli/auth.py").write_text("policy = False\n")
@@ -66,3 +66,12 @@ def test_stamp_files_match_copier(core, tmp_path):
     destination.mkdir()
     _copy_core_inputs(core, destination)
     assert core_sources_stamp(core) == core_sources_stamp(destination)
+
+
+def test_currency_ignores_bundled_plugins(core):
+    """Bundled plugins are tracked by members_stamp; a new one must not stale the core."""
+    before = stamp(core)
+    plugin = core / "plugins/trusted-fixture"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.yaml").write_text("name: trusted-fixture\n")
+    assert stamp(core) == before
